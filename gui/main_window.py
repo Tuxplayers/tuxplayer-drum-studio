@@ -19,6 +19,8 @@
 import os
 import signal
 import subprocess
+import threading
+import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog
 
@@ -163,8 +165,16 @@ class MainWindow:
         # Standard-Pattern laden
         self._load_pattern()
 
+        # Callback-Exceptions landen im Status-Label statt im Crash
+        self.root.report_callback_exception = self._handle_callback_exception
+
+        # Fenster-Schließen-Protokoll (X-Button → sauberes Quit)
+        self.root.protocol("WM_DELETE_WINDOW", self._quit)
+
         signal.signal(signal.SIGINT, lambda *_: self._quit())
-        self.root.after(200, self._refresh_pw_devices)
+
+        # PipeWire-Scan im Hintergrundthread starten (blockiert NICHT die GUI)
+        self.root.after(300, self._refresh_pw_devices)
 
     # ── TTK-Style (identisch TUX-Guitar-Tuner) ────────────────────────────────
     def _apply_ttk_style(self):
@@ -488,7 +498,7 @@ class MainWindow:
                 if active:
                     self._canvas.create_rectangle(
                         x1 + 1, y1 + 2, x2 - 1, y1 + 6,
-                        fill="#ffffff22", outline="")
+                        fill="#3a3a3a", outline="")
 
         # Takt-Trennlinien alle 4 Schritte (#444444)
         for t in range(1, 4):
@@ -706,27 +716,52 @@ class MainWindow:
         self.root.after(500, lambda: self._set_status("Routing aktiviert.", "ok"))
 
     def _refresh_pw_devices(self):
-        """Liest erkannte PipeWire-Nodes via pw-cli aus."""
+        """
+        Startet den PipeWire-Geräte-Scan im Hintergrundthread.
+        Die GUI bleibt während des Scans vollständig reaktionsfähig.
+        """
+        self._set_status("PipeWire: Scan läuft …", "warn")
+
+        def _scan():
+            """Läuft in einem Daemon-Thread – kein GUI-Zugriff hier."""
+            lines_found: list[str] = []
+            status_msg  = ""
+            status_lvl  = "ok"
+            try:
+                result = subprocess.run(
+                    ["pw-cli", "list-objects", "Node"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in result.stdout.splitlines():
+                    if "node.name" in line:
+                        cleaned = line.strip().strip('"').strip("'")
+                        if cleaned:
+                            lines_found.append(cleaned)
+                status_msg = "PipeWire: Geräteliste aktualisiert."
+                status_lvl = "ok"
+            except FileNotFoundError:
+                lines_found = ["pw-cli nicht gefunden"]
+                status_msg  = "pw-cli fehlt – PipeWire aktiv?"
+                status_lvl  = "warn"
+            except subprocess.TimeoutExpired:
+                lines_found = ["(Timeout)"]
+                status_msg  = "PipeWire: Timeout beim Geräte-Scan."
+                status_lvl  = "error"
+
+            # UI-Update sicher im Hauptthread ausführen
+            self.root.after(0, lambda: self._update_pw_list(lines_found, status_msg, status_lvl))
+
+        threading.Thread(target=_scan, daemon=True).start()
+
+    def _update_pw_list(self, lines: list[str], msg: str, level: str):
+        """Aktualisiert die PipeWire-Listbox im Hauptthread (thread-safe)."""
         self._pw_lb.delete(0, tk.END)
-        try:
-            result = subprocess.run(
-                ["pw-cli", "list-objects", "Node"],
-                capture_output=True, text=True, timeout=3,
-            )
-            for line in result.stdout.splitlines():
-                if "node.name" in line:
-                    cleaned = line.strip().strip('"').strip("'")
-                    if cleaned:
-                        self._pw_lb.insert(tk.END, cleaned)
-            if self._pw_lb.size() == 0:
-                self._pw_lb.insert(tk.END, "(keine Nodes gefunden)")
-            self._set_status("PipeWire: Geräteliste aktualisiert.", "ok")
-        except FileNotFoundError:
-            self._pw_lb.insert(tk.END, "pw-cli nicht gefunden")
-            self._set_status("pw-cli fehlt – PipeWire aktiv?", "warn")
-        except subprocess.TimeoutExpired:
-            self._pw_lb.insert(tk.END, "(Timeout)")
-            self._set_status("PipeWire: Timeout beim Geräte-Scan.", "error")
+        if lines:
+            for line in lines:
+                self._pw_lb.insert(tk.END, line)
+        else:
+            self._pw_lb.insert(tk.END, "(keine Nodes gefunden)")
+        self._set_status(msg, level)
 
     def _save_qpwgraph(self):
         """Speichert die aktuelle qpwgraph-Session."""
@@ -735,6 +770,16 @@ class MainWindow:
             self._set_status("qpwgraph: Session gespeichert.", "ok")
         except FileNotFoundError:
             self._set_status("qpwgraph nicht installiert.", "error")
+
+    def _handle_callback_exception(self, exc_type, exc_value, exc_tb):
+        """
+        Globaler Tkinter-Callback-Exception-Handler.
+        Zeigt Fehler im Status-Label (rot) statt das Programm zu beenden.
+        """
+        msg = traceback.format_exception_only(exc_type, exc_value)[-1].strip()
+        self._set_status(f"Fehler: {msg}", "error")
+        # Vollständigen Traceback zur Diagnose in stderr ausgeben
+        traceback.print_exception(exc_type, exc_value, exc_tb)
 
     def _quit(self):
         self.root.destroy()
