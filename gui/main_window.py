@@ -3,7 +3,7 @@
 # AUTOR        : Heiko Schäfer
 # ARTIST       : TUXPLAYER
 # ERSTELLT     : 2026-04-03
-# VERSION      : 1.2.0
+# VERSION      : 1.3.0
 # BESCHREIBUNG : Hauptfenster – 3-spaltiges Dark-UI im TUXPLAYER-Stil
 #                Echte MIDI-Generierung, FluidSynth-Playback, Hydrogen/Bitwig
 # STATUS       : development
@@ -23,6 +23,9 @@
 #              : 2026-04-04 v1.2.0 – Doppelbase-Fix: Note 35 auf nächste 16tel
 #              :                     Spenden-Tab (Buy Me a Coffee + PayPal)
 #              :                     webbrowser-Integration für Donate-Links
+#              : 2026-04-04 v1.3.0 – Dropdown-Schrift: grün → weiß (besser lesbar)
+#              :                     H2Song-Export: natives Hydrogen-Format (.h2song)
+#              :                     Hydrogen-Button öffnet direkt mit .h2song
 # ==============================================================================
 
 import os
@@ -172,7 +175,7 @@ class MainWindow:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("🥁 TUXPLAYER Drum Studio v1.2")
+        self.root.title("🥁 TUXPLAYER Drum Studio v1.3")
         self.root.configure(bg=C_BG)
         self.root.resizable(False, False)
         self.root.geometry("1200x800")
@@ -231,10 +234,13 @@ class MainWindow:
                 foreground=[("selected", "black")])
         sty.configure("TCombobox",
                        fieldbackground=C_WIDGET, background=C_BTN,
-                       foreground=C_GREEN, selectbackground=C_GREEN_SL)
+                       foreground=C_FG, selectbackground=C_GREEN_SL,
+                       selectforeground="white")
+        sty.map("TCombobox",
+                foreground=[("readonly", C_FG), ("disabled", C_FG_DARK)])
         sty.configure("TSpinbox",
                        fieldbackground=C_WIDGET, background=C_BTN,
-                       foreground=C_GREEN)
+                       foreground=C_FG)
 
     # ── Bilder ────────────────────────────────────────────────────────────────
     def _load_images(self):
@@ -827,13 +833,116 @@ class MainWindow:
             return self._last_midi_path
         return self._export_midi()
 
+    def _export_h2song(self) -> str | None:
+        """Exportiert das aktuelle Pattern als Hydrogen .h2song (XML-Format)."""
+        export_dir = self._export_path.get()
+        try:
+            os.makedirs(export_dir, exist_ok=True)
+        except OSError as e:
+            self._set_status(f"Pfad-Fehler: {e}", "error")
+            return None
+
+        basename = self._export_name.get().replace(".mid", "")
+        filepath = os.path.join(export_dir, f"{basename}.h2song")
+        bpm   = self._bpm_var.get()
+        bars  = self._bars_var.get()
+
+        # Hydrogen GM-Instrument-Mapping (Standard GMkit)
+        # Instrument-ID in Hydrogen → GM-Note
+        H2_INSTR = {36: 0, 38: 1, 42: 2, 49: 3, 35: 4}  # BD, SN, HH, Crash, BD2
+        h2_notes = {v: k for k, v in H2_INSTR.items()}   # 0→36, 1→38 …
+
+        # Pattern-Zeilen → (instr_id, position 0-191 für 2 Bars × 96 Steps)
+        STEPS_H2  = 192   # Hydrogen nutzt 192 Steps pro 2 Bars (48 pro Beat)
+        STEP_TICKS = STEPS_H2 // 32  # 16tel-Note = 6 Hydrogen-Steps bei 2 Bars
+
+        notes_xml = []
+        row_map = {
+            "kick":  0,   # Instr 0 = BD (Note 36)
+            "snare": 1,   # Instr 1 = SN (Note 38)
+            "hihat": 2,   # Instr 2 = HH (Note 42)
+            "fill":  3,   # Instr 3 = Crash (Note 49)
+        }
+        for row_key, instr_id in row_map.items():
+            for si, active in enumerate(self._grid_data[row_key]):
+                if active:
+                    pos = si * STEP_TICKS
+                    notes_xml.append(
+                        f'            <note><position>{pos}</position>'
+                        f'<velocity>0.8</velocity><pan_L>0.5</pan_L>'
+                        f'<pan_R>0.5</pan_R><pitch>0</pitch>'
+                        f'<instrument>{instr_id}</instrument></note>'
+                    )
+        if self._double_kick.get():
+            for si, active in enumerate(self._grid_data["kick"]):
+                if active:
+                    pos = si * STEP_TICKS + STEP_TICKS
+                    if pos < STEPS_H2:
+                        notes_xml.append(
+                            f'            <note><position>{pos}</position>'
+                            f'<velocity>0.75</velocity><pan_L>0.5</pan_L>'
+                            f'<pan_R>0.5</pan_R><pitch>0</pitch>'
+                            f'<instrument>4</instrument></note>'
+                        )
+
+        pattern_name = self._pattern_var.get()
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<song>
+  <version>0.9.7</version>
+  <bpm>{bpm}</bpm>
+  <volume>0.5</volume>
+  <metronomeVolume>0.5</metronomeVolume>
+  <name>{pattern_name} – TUXPLAYER Drum Studio</name>
+  <author>Heiko Schäfer (TUXPLAYER)</author>
+  <notes></notes>
+  <license>MIT</license>
+  <loopmode>true</loopmode>
+  <patternModeMode>stacked</patternModeMode>
+  <humanize_velocity>0</humanize_velocity>
+  <humanize_time>0</humanize_time>
+  <swing_factor>0</swing_factor>
+  <instrumentList>
+    <instrument><id>0</id><name>Bass Drum 1</name><midiOutChannel>9</midiOutChannel><midiOutNote>36</midiOutNote><volume>1</volume><isMuted>false</isMuted></instrument>
+    <instrument><id>1</id><name>Acoustic Snare</name><midiOutChannel>9</midiOutChannel><midiOutNote>38</midiOutNote><volume>1</volume><isMuted>false</isMuted></instrument>
+    <instrument><id>2</id><name>Closed Hi-Hat</name><midiOutChannel>9</midiOutChannel><midiOutNote>42</midiOutNote><volume>0.85</volume><isMuted>false</isMuted></instrument>
+    <instrument><id>3</id><name>Crash Cymbal 1</name><midiOutChannel>9</midiOutChannel><midiOutNote>49</midiOutNote><volume>0.9</volume><isMuted>false</isMuted></instrument>
+    <instrument><id>4</id><name>Bass Drum 2</name><midiOutChannel>9</midiOutChannel><midiOutNote>35</midiOutNote><volume>0.95</volume><isMuted>false</isMuted></instrument>
+  </instrumentList>
+  <patternList>
+    <pattern>
+      <name>{pattern_name}</name>
+      <category>Main</category>
+      <size>{STEPS_H2}</size>
+      <noteList>
+{chr(10).join(notes_xml)}
+      </noteList>
+    </pattern>
+  </patternList>
+  <patternGroupSequence>
+    <group><patternID>0</patternID></group>
+  </patternGroupSequence>
+  <timeline activated="false"/>
+</song>
+"""
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(xml)
+            self._last_midi_path = filepath
+            self._set_status(
+                f"✔ H2Song: {os.path.basename(filepath)}  ({bars} Takte, {bpm} BPM)", "ok")
+            return filepath
+        except OSError as e:
+            self._set_status(f"H2Song-Fehler: {e}", "error")
+            return None
+
     def _open_in_hydrogen(self):
-        path = self._get_midi_path()
+        """Exportiert als .h2song und öffnet direkt in Hydrogen."""
+        path = self._export_h2song()
         if not path:
             return
         try:
             subprocess.Popen(["hydrogen", path])
-            self._set_status(f"🌿 Hydrogen geöffnet: {os.path.basename(path)}", "ok")
+            self._set_status(f"🌿 Hydrogen: {os.path.basename(path)}", "ok")
         except FileNotFoundError:
             self._set_status("Hydrogen nicht gefunden! (hydrogen installieren)", "error")
 
