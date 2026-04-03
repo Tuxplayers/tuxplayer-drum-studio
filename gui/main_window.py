@@ -1069,7 +1069,7 @@ Alles läuft lokal auf deinem System. Keine Telemetrie, keine Analytics.
         return self._export_midi()
 
     def _export_h2song(self) -> str | None:
-        """Exportiert das aktuelle Pattern als Hydrogen .h2song (XML-Format)."""
+        """Exportiert als natives Hydrogen .h2song mit Dave Grohl Drumkit."""
         export_dir = self._export_path.get()
         try:
             os.makedirs(export_dir, exist_ok=True)
@@ -1078,85 +1078,163 @@ Alles läuft lokal auf deinem System. Keine Telemetrie, keine Analytics.
             return None
 
         basename = self._export_name.get().replace(".mid", "")
-        filepath = os.path.join(export_dir, f"{basename}.h2song")
-        bpm   = self._bpm_var.get()
-        bars  = self._bars_var.get()
+        filepath  = os.path.join(export_dir, f"{basename}.h2song")
+        bpm  = self._bpm_var.get()
+        bars = self._bars_var.get()
 
-        # Hydrogen GM-Instrument-Mapping (Standard GMkit)
-        # Instrument-ID in Hydrogen → GM-Note
-        H2_INSTR = {36: 0, 38: 1, 42: 2, 49: 3, 35: 4}  # BD, SN, HH, Crash, BD2
-        h2_notes = {v: k for k, v in H2_INSTR.items()}   # 0→36, 1→38 …
+        # Drumkit: Dave Grohl (lokal installiert), Fallback GMRockKit
+        DG_PATH = "/home/heiko/.hydrogen/data/drumkits/Dave Grohl"
+        GM_PATH = "/usr/share/hydrogen/data/drumkits/GMRockKit"
+        if os.path.isdir(DG_PATH):
+            dk_path, dk_name = DG_PATH, "Dave Grohl"
+        else:
+            dk_path, dk_name = GM_PATH, "GMRockKit"
 
-        # Pattern-Zeilen → (instr_id, position 0-191 für 2 Bars × 96 Steps)
-        STEPS_H2  = 192   # Hydrogen nutzt 192 Steps pro 2 Bars (48 pro Beat)
-        STEP_TICKS = STEPS_H2 // 32  # 16tel-Note = 6 Hydrogen-Steps bei 2 Bars
+        def _instr(id_, name, midi_note, filename, vol="1"):
+            return f"""  <instrument>
+   <id>{id_}</id>
+   <name>{name}</name>
+   <drumkitPath>{dk_path}</drumkitPath>
+   <drumkit>{dk_name}</drumkit>
+   <volume>{vol}</volume>
+   <isMuted>false</isMuted>
+   <isSoloed>false</isSoloed>
+   <pan_L>1</pan_L>
+   <pan_R>1</pan_R>
+   <pitchOffset>0</pitchOffset>
+   <randomPitchFactor>0</randomPitchFactor>
+   <gain>1</gain>
+   <applyVelocity>true</applyVelocity>
+   <filterActive>false</filterActive>
+   <filterCutoff>1</filterCutoff>
+   <filterResonance>0</filterResonance>
+   <Attack>0</Attack>
+   <Decay>0</Decay>
+   <Sustain>1</Sustain>
+   <Release>1000</Release>
+   <muteGroup>-1</muteGroup>
+   <midiOutChannel>-1</midiOutChannel>
+   <midiOutNote>{midi_note}</midiOutNote>
+   <isStopNote>false</isStopNote>
+   <sampleSelectionAlgo>VELOCITY</sampleSelectionAlgo>
+   <isHihat>-1</isHihat>
+   <lower_cc>0</lower_cc>
+   <higher_cc>127</higher_cc>
+   <FX1Level>0</FX1Level><FX2Level>0</FX2Level>
+   <FX3Level>0</FX3Level><FX4Level>0</FX4Level>
+   <instrumentComponent>
+    <component_id>0</component_id>
+    <gain>1</gain>
+    <layer>
+     <filename>{filename}</filename>
+     <min>0</min><max>1</max><gain>1</gain><pitch>0</pitch>
+     <ismodified>false</ismodified><smode>forward</smode>
+     <startframe>0</startframe><loopframe>0</loopframe>
+     <loops>0</loops><endframe>0</endframe>
+     <userubber>0</userubber><rubberdivider>1</rubberdivider>
+     <rubberCsettings>4</rubberCsettings><rubberPitch>1</rubberPitch>
+    </layer>
+   </instrumentComponent>
+  </instrument>"""
+
+        instruments_xml = "\n".join([
+            _instr(0, "Kick",         36, "kik.ogg"),
+            _instr(1, "Snare",        38, "snare1.ogg"),
+            _instr(2, "Hi-Hat Close", 42, "hihat2.ogg"),
+            _instr(3, "Crash L",      49, "crash1.ogg", "0.9"),
+            _instr(4, "Kick 2",       35, "kik.ogg",    "0.95"),
+        ])
+
+        # Pattern-Noten: Hydrogen 1.2.x nutzt 192 Steps pro Pattern (48/Beat × 4)
+        STEPS_H2   = 192
+        STEP_SIZE  = STEPS_H2 // 16   # 16tel-Note = 12 Steps
+        row_map = {"kick": 0, "snare": 1, "hihat": 2, "fill": 3}
 
         notes_xml = []
-        row_map = {
-            "kick":  0,   # Instr 0 = BD (Note 36)
-            "snare": 1,   # Instr 1 = SN (Note 38)
-            "hihat": 2,   # Instr 2 = HH (Note 42)
-            "fill":  3,   # Instr 3 = Crash (Note 49)
-        }
         for row_key, instr_id in row_map.items():
             for si, active in enumerate(self._grid_data[row_key]):
                 if active:
-                    pos = si * STEP_TICKS
+                    pos = si * STEP_SIZE
                     notes_xml.append(
-                        f'            <note><position>{pos}</position>'
-                        f'<velocity>0.8</velocity><pan_L>0.5</pan_L>'
-                        f'<pan_R>0.5</pan_R><pitch>0</pitch>'
-                        f'<instrument>{instr_id}</instrument></note>'
+                        f"   <note><position>{pos}</position>"
+                        f"<velocity>0.8</velocity><pan_L>0.5</pan_L>"
+                        f"<pan_R>0.5</pan_R><pitch>0</pitch>"
+                        f"<instrument>{instr_id}</instrument>"
+                        f"<length>-1</length><leadlag>0</leadlag>"
+                        f"<noteoff>false</noteoff><probability>1</probability></note>"
                     )
         if self._double_kick.get():
             for si, active in enumerate(self._grid_data["kick"]):
                 if active:
-                    pos = si * STEP_TICKS + STEP_TICKS
+                    pos = si * STEP_SIZE + STEP_SIZE
                     if pos < STEPS_H2:
                         notes_xml.append(
-                            f'            <note><position>{pos}</position>'
-                            f'<velocity>0.75</velocity><pan_L>0.5</pan_L>'
-                            f'<pan_R>0.5</pan_R><pitch>0</pitch>'
-                            f'<instrument>4</instrument></note>'
+                            f"   <note><position>{pos}</position>"
+                            f"<velocity>0.75</velocity><pan_L>0.5</pan_L>"
+                            f"<pan_R>0.5</pan_R><pitch>0</pitch>"
+                            f"<instrument>4</instrument>"
+                            f"<length>-1</length><leadlag>0</leadlag>"
+                            f"<noteoff>false</noteoff><probability>1</probability></note>"
                         )
 
         pattern_name = self._pattern_var.get()
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <song>
-  <version>0.9.7</version>
-  <bpm>{bpm}</bpm>
-  <volume>0.5</volume>
-  <metronomeVolume>0.5</metronomeVolume>
-  <name>{pattern_name} – TUXPLAYER Drum Studio</name>
-  <author>Heiko Schäfer (TUXPLAYER)</author>
-  <notes></notes>
-  <license>MIT</license>
-  <loopmode>true</loopmode>
-  <patternModeMode>stacked</patternModeMode>
-  <humanize_velocity>0</humanize_velocity>
-  <humanize_time>0</humanize_time>
-  <swing_factor>0</swing_factor>
-  <instrumentList>
-    <instrument><id>0</id><name>Bass Drum 1</name><midiOutChannel>9</midiOutChannel><midiOutNote>36</midiOutNote><volume>1</volume><isMuted>false</isMuted></instrument>
-    <instrument><id>1</id><name>Acoustic Snare</name><midiOutChannel>9</midiOutChannel><midiOutNote>38</midiOutNote><volume>1</volume><isMuted>false</isMuted></instrument>
-    <instrument><id>2</id><name>Closed Hi-Hat</name><midiOutChannel>9</midiOutChannel><midiOutNote>42</midiOutNote><volume>0.85</volume><isMuted>false</isMuted></instrument>
-    <instrument><id>3</id><name>Crash Cymbal 1</name><midiOutChannel>9</midiOutChannel><midiOutNote>49</midiOutNote><volume>0.9</volume><isMuted>false</isMuted></instrument>
-    <instrument><id>4</id><name>Bass Drum 2</name><midiOutChannel>9</midiOutChannel><midiOutNote>35</midiOutNote><volume>0.95</volume><isMuted>false</isMuted></instrument>
-  </instrumentList>
-  <patternList>
-    <pattern>
-      <name>{pattern_name}</name>
-      <category>Main</category>
-      <size>{STEPS_H2}</size>
-      <noteList>
+ <version>1.2.6-</version>
+ <bpm>{bpm}</bpm>
+ <volume>0.9</volume>
+ <isMuted>false</isMuted>
+ <metronomeVolume>0.5</metronomeVolume>
+ <name>{pattern_name} – TUXPLAYER Drum Studio</name>
+ <author>Heiko Schaefer (TUXPLAYER)</author>
+ <notes>Erstellt mit TUXPLAYER Drum Studio</notes>
+ <license>MIT</license>
+ <loopEnabled>true</loopEnabled>
+ <patternModeMode>true</patternModeMode>
+ <playbackTrackFilename></playbackTrackFilename>
+ <playbackTrackEnabled>false</playbackTrackEnabled>
+ <playbackTrackVolume>0</playbackTrackVolume>
+ <action_mode>0</action_mode>
+ <isPatternEditorLocked>false</isPatternEditorLocked>
+ <isTimelineActivated>false</isTimelineActivated>
+ <mode>song</mode>
+ <pan_law_type>RATIO_STRAIGHT_POLYGONAL</pan_law_type>
+ <pan_law_k_norm>1.33333</pan_law_k_norm>
+ <humanize_time>0</humanize_time>
+ <humanize_velocity>0</humanize_velocity>
+ <swing_factor>0</swing_factor>
+ <last_loaded_drumkit>{dk_path}</last_loaded_drumkit>
+ <last_loaded_drumkit_name>{dk_name}</last_loaded_drumkit_name>
+ <componentList>
+  <drumkitComponent>
+   <id>0</id>
+   <name>Main</name>
+   <volume>1</volume>
+  </drumkitComponent>
+ </componentList>
+ <instrumentList>
+{instruments_xml}
+ </instrumentList>
+ <patternList>
+  <pattern>
+   <name>{pattern_name}</name>
+   <info></info>
+   <category>Main</category>
+   <size>{STEPS_H2}</size>
+   <denominator>4</denominator>
+   <noteList>
 {chr(10).join(notes_xml)}
-      </noteList>
-    </pattern>
-  </patternList>
-  <patternGroupSequence>
-    <group><patternID>0</patternID></group>
-  </patternGroupSequence>
-  <timeline activated="false"/>
+   </noteList>
+  </pattern>
+ </patternList>
+ <patternGroupSequence>
+  <group><patternID>0</patternID></group>
+ </patternGroupSequence>
+ <timeline>
+  <enabled>false</enabled>
+  <totalLength>0</totalLength>
+ </timeline>
+ <automationPaths/>
 </song>
 """
         try:
@@ -1164,7 +1242,7 @@ Alles läuft lokal auf deinem System. Keine Telemetrie, keine Analytics.
                 f.write(xml)
             self._last_midi_path = filepath
             self._set_status(
-                f"✔ H2Song: {os.path.basename(filepath)}  ({bars} Takte, {bpm} BPM)", "ok")
+                f"✔ H2Song ({dk_name}): {os.path.basename(filepath)}", "ok")
             return filepath
         except OSError as e:
             self._set_status(f"H2Song-Fehler: {e}", "error")
