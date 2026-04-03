@@ -3,7 +3,7 @@
 # AUTOR        : Heiko Schäfer
 # ARTIST       : TUXPLAYER
 # ERSTELLT     : 2026-04-03
-# VERSION      : 1.3.0
+# VERSION      : 1.4.0
 # BESCHREIBUNG : Hauptfenster – 3-spaltiges Dark-UI im TUXPLAYER-Stil
 #                Echte MIDI-Generierung, FluidSynth-Playback, Hydrogen/Bitwig
 # STATUS       : development
@@ -175,7 +175,7 @@ class MainWindow:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("🥁 TUXPLAYER Drum Studio v1.3")
+        self.root.title("🥁 TUXPLAYER Drum Studio v1.4")
         self.root.configure(bg=C_BG)
         self.root.resizable(False, False)
         self.root.geometry("1200x800")
@@ -224,6 +224,13 @@ class MainWindow:
 
     # ── TTK-Style ─────────────────────────────────────────────────────────────
     def _apply_ttk_style(self):
+        # Combobox-Dropdown-Listbox: dunkles Theme erzwingen
+        self.root.option_add("*TCombobox*Listbox.background",       C_WIDGET)
+        self.root.option_add("*TCombobox*Listbox.foreground",       C_FG)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", C_GREEN_SL)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", C_FG)
+        self.root.option_add("*TCombobox*Listbox.font",             "Arial 10")
+
         sty = ttk.Style()
         sty.theme_use("default")
         sty.configure("TNotebook", background=C_BG, borderwidth=0)
@@ -289,30 +296,87 @@ class MainWindow:
 
     # ── Hauptkörper ───────────────────────────────────────────────────────────
     def _build_body(self):
-        body = tk.Frame(self.root, bg=C_BG)
-        body.pack(side="top", fill="both", expand=True)
-        self._build_left(body)
-        self._build_right(body)
-        self._build_middle(body)
+        # EIN Haupt-Notebook mit allen Tabs in einer einzigen Reihe
+        nb = ttk.Notebook(self.root)
+        nb.pack(side="top", fill="both", expand=True)
+
+        t_song    = tk.Frame(nb, bg=C_BG)
+        t_device  = tk.Frame(nb, bg=C_BG)
+        t_help    = tk.Frame(nb, bg=C_BG)
+        t_license = tk.Frame(nb, bg=C_BG)
+        t_donate  = tk.Frame(nb, bg=C_BG)
+
+        nb.add(t_song,    text="  🥁 Song  ")
+        nb.add(t_device,  text="  🎛 Gerät  ")
+        nb.add(t_help,    text="  📖 Hilfe  ")
+        nb.add(t_license, text="  ⚖ Lizenz  ")
+        nb.add(t_donate,  text="  💛 Spenden  ")
+
+        # Song-Tab: linkes Song-Panel + Mitte + rechtes Panel
+        self._build_left_song(t_song)
+        self._build_right(t_song)
+        self._build_middle(t_song)
+
+        # Gerät-Tab: volle Breite, Audio/MIDI-Konfiguration
+        self._build_page_device(t_device)
+
+        # Info-Seiten (volle Breite)
+        self._build_page_help(t_help)
+        self._build_page_license(t_license)
+        self._build_page_donate(t_donate)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LINKS – 220 px
     # ══════════════════════════════════════════════════════════════════════════
-    def _build_left(self, parent):
+    def _build_left_song(self, parent):
+        """Linkes Panel: nur Song-Sektionsliste."""
         frame = tk.Frame(parent, bg=C_PANEL, width=220)
         frame.pack(side="left", fill="y")
         frame.pack_propagate(False)
+        self._build_tab_song(frame)
 
-        nb = ttk.Notebook(frame, width=218)
-        nb.pack(fill="both", expand=True)
+    def _build_page_device(self, parent):
+        """Gerät-Seite: Audio/MIDI-Konfiguration, volle Breite, zentriert."""
+        tk.Label(parent, text="🎛  Audio / MIDI Konfiguration",
+                 fg=C_GREEN, bg=C_BG, font=("Arial", 16, "bold")
+                 ).pack(pady=(20, 4))
+        tk.Frame(parent, bg=C_CYAN, height=2).pack(fill="x", padx=40, pady=(0, 20))
 
-        t_song   = tk.Frame(nb, bg=C_PANEL)
-        t_device = tk.Frame(nb, bg=C_PANEL)
-        nb.add(t_song,   text="🥁 Song")
-        nb.add(t_device, text="🎛 Gerät")
+        center = tk.Frame(parent, bg=C_BG)
+        center.pack(expand=True)
 
-        self._build_tab_song(t_song)
-        self._build_tab_device(t_device)
+        def _row(label, var, values):
+            row = tk.Frame(center, bg=C_BG)
+            row.pack(fill="x", pady=8)
+            tk.Label(row, text=label, fg=C_FG, bg=C_BG,
+                     font=("Arial", 12), width=16, anchor="e").pack(side="left", padx=(0, 12))
+            om = tk.OptionMenu(row, var, *values)
+            om.config(bg=C_BTN, fg=C_FG, activebackground=C_GREEN_D,
+                      activeforeground="black", highlightthickness=0,
+                      relief="flat", font=("Arial", 12), width=26,
+                      indicatoron=True, cursor="hand2")
+            om["menu"].config(bg=C_WIDGET, fg=C_FG,
+                              activebackground=C_GREEN_SL, activeforeground=C_FG,
+                              font=("Arial", 12))
+            om.pack(side="left")
+
+        _row("Audiogerät:", self._audio_dev, AUDIO_DEVS)
+        _row("MIDI-Device:", self._midi_dev, MIDI_DEVS)
+
+        tk.Frame(center, bg="#333333", height=1).pack(fill="x", pady=20)
+
+        tk.Button(center, text="🔌  Routing aktivieren",
+                  command=self._activate_routing,
+                  bg=C_GREEN_D, fg="black", font=("Arial", 13, "bold"),
+                  relief="flat", cursor="hand2", pady=12, padx=30,
+                  activebackground=C_GREEN, activeforeground="black",
+                  ).pack(pady=(0, 10))
+
+        tk.Label(center,
+                 text="Verbindet alle Drum-Kanäle via PipeWire (pw-link).\n"
+                      "Voraussetzung: PreSonus 1824c oder kompatibles Interface.",
+                 fg=C_FG_DIM, bg=C_BG, font=("Arial", 10), justify="center"
+                 ).pack()
 
     def _build_tab_song(self, parent):
         tk.Label(parent, text="Song-Sektionen",
@@ -364,15 +428,23 @@ class MainWindow:
             tk.Label(parent, text=t, fg=C_FG_DIM, bg=C_PANEL,
                      font=("Arial", 9)).pack(anchor="w", padx=12)
 
+        def _omenu(parent, var, values):
+            om = tk.OptionMenu(parent, var, *values)
+            om.config(bg=C_BTN, fg=C_FG, activebackground=C_GREEN_D,
+                      activeforeground="black", highlightthickness=0,
+                      relief="flat", font=("Arial", 9), cursor="hand2")
+            om["menu"].config(bg=C_WIDGET, fg=C_FG,
+                              activebackground=C_GREEN_SL, activeforeground=C_FG,
+                              font=("Arial", 9))
+            return om
+
         _lbl("Audiogerät:")
-        ttk.Combobox(parent, textvariable=self._audio_dev,
-                     values=AUDIO_DEVS, state="readonly",
-                     font=("Arial", 9)).pack(fill="x", padx=12, pady=(2, 10))
+        _omenu(parent, self._audio_dev, AUDIO_DEVS).pack(
+            fill="x", padx=12, pady=(2, 10))
 
         _lbl("MIDI-Device:")
-        ttk.Combobox(parent, textvariable=self._midi_dev,
-                     values=MIDI_DEVS, state="readonly",
-                     font=("Arial", 9)).pack(fill="x", padx=12, pady=(2, 14))
+        _omenu(parent, self._midi_dev, MIDI_DEVS).pack(
+            fill="x", padx=12, pady=(2, 14))
 
         tk.Button(parent, text="🔌 Routing aktivieren",
                   command=self._activate_routing,
@@ -380,6 +452,151 @@ class MainWindow:
                   relief="flat", cursor="hand2", pady=8,
                   activebackground=C_GREEN, activeforeground="black",
                   ).pack(fill="x", padx=12)
+
+    def _build_page_help(self, parent):
+        """Hilfe-Seite – volle Fensterbreite, gut lesbar."""
+        tk.Label(parent, text="📖  Bedienungsanleitung",
+                 fg=C_GREEN, bg=C_BG, font=("Arial", 16, "bold")
+                 ).pack(pady=(20, 4))
+        tk.Frame(parent, bg=C_CYAN, height=2).pack(fill="x", padx=40, pady=(0, 16))
+
+        content = tk.Frame(parent, bg=C_BG)
+        content.pack(fill="both", expand=True, padx=60)
+
+        sections = [
+            ("1.  Beat-Pattern wählen",
+             "→  Dropdown in der Mitte: Standard Rock, Bonham Rock, Grohl Grunge, Purdie Shuffle …\n"
+             "→  Klick auf eine Zelle im Beat-Grid: Note an- oder ausschalten\n"
+             "→  Jede Zeile ist ein Instrument: BD = Bass Drum, SN = Snare, HH = HiHat, FL = Fill"),
+            ("2.  BPM + Takte einstellen",
+             "→  BPM: Tempo in Schlägen pro Minute (60–240)\n"
+             "→  Takte: wie viele Male das Pattern wiederholt wird"),
+            ("3.  Abspielen  [▶ Play]",
+             "→  Erzeugt die MIDI-Datei und startet FluidSynth sofort\n"
+             "→  [🔁 Loop (Dauerschleife)] aktivieren → läuft endlos bis [⏹ Stop]\n"
+             "→  Gitarre in der Hand → Pattern läuft → einfach mitspielen!"),
+            ("4.  In Hydrogen öffnen  [🌿 Hydrogen]",
+             "→  Exportiert das Pattern als natives .h2song (Hydrogen-Format)\n"
+             "→  Hydrogen öffnet sich mit fertig belegtem Drum-Kit\n"
+             "→  Alle Instrumente (BD/SN/HH/Crash/Doppelbase) sind sofort spielbereit"),
+            ("5.  In Bitwig öffnen  [🎛 Bitwig]",
+             "→  Exportiert als Standard-MIDI (.mid) und öffnet Bitwig Studio\n"
+             "→  MIDI auf eine Drum-Spur ziehen → fertig"),
+            ("6.  Doppelbase",
+             "→  Aktiviert Note 35 (linkes Fußpedal) auf der nächsten 16tel-Note nach Note 36\n"
+             "→  Erzeugt einen echten Wechsel-Bass-Effekt"),
+            ("7.  PipeWire Routing  [Tab 🎛 Gerät]",
+             "→  Audiogerät und MIDI-Device auswählen\n"
+             "→  [Routing aktivieren] verbindet Drum-Kanäle via pw-link"),
+        ]
+
+        for title, body in sections:
+            tk.Label(content, text=title,
+                     fg=C_CYAN, bg=C_BG, font=("Arial", 12, "bold"),
+                     anchor="w").pack(fill="x", pady=(12, 2))
+            tk.Label(content, text=body,
+                     fg=C_FG, bg=C_BG, font=("Arial", 10),
+                     justify="left", anchor="w", wraplength=900).pack(fill="x", padx=16)
+
+    def _build_page_license(self, parent):
+        """Lizenz-Seite – volle Breite."""
+        tk.Label(parent, text="⚖  Lizenz & Rechtliches",
+                 fg=C_GREEN, bg=C_BG, font=("Arial", 16, "bold")
+                 ).pack(pady=(20, 4))
+        tk.Frame(parent, bg=C_CYAN, height=2).pack(fill="x", padx=40, pady=(0, 16))
+
+        lic_text = """\
+MIT-LIZENZ  (Quellcode)
+══════════════════════════════════════════════════════════════════════
+
+Copyright © 2026 Heiko Schäfer (TUXPLAYER)   |   contact@tuxhs.de
+
+Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und der zugehörigen
+Dokumentationsdateien (die „Software") erhält, die Erlaubnis erteilt, sie uneingeschränkt
+zu nutzen, einschließlich der Rechte, sie zu verwenden, zu kopieren, zu verändern,
+zusammenzuführen, zu veröffentlichen, zu verbreiten, zu unterlizenzieren und/oder zu verkaufen.
+
+DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTELLT.
+
+
+CC BY-SA 4.0  (Assets / Grafiken)
+══════════════════════════════════════════════════════════════════════
+
+LOGObranding_logo_Program.png       © 2026 Heiko Schäfer (TUXPLAYER)
+TUXPLAYER_MASCOT_RED_SILUET.png     © 2026 Heiko Schäfer (TUXPLAYER)
+tuxplayer_NEW_Web_icon_2026.png     © 2026 Heiko Schäfer (TUXPLAYER)
+
+Creative Commons Attribution-ShareAlike 4.0 International
+→ https://creativecommons.org/licenses/by-sa/4.0/
+
+
+Abhängigkeiten (Drittanbieter-Lizenzen)
+══════════════════════════════════════════════════════════════════════
+
+  mido              MIT-Lizenz
+  python-rtmidi     MIT-Lizenz
+  Pillow            HPND-Lizenz (PIL Historical Permission Notice)
+  FluidSynth        GNU LGPL v2.1+
+  FluidR3 GM SF2    MIT-Lizenz  (Frank Wen, Michael Klingbeil)
+  Python / tkinter  PSF-Lizenz
+
+
+Datenschutz
+══════════════════════════════════════════════════════════════════════
+
+Dieses Programm überträgt keinerlei Daten ins Internet.
+Alles läuft lokal auf deinem System. Keine Telemetrie, keine Analytics.
+"""
+        st = scrolledtext.ScrolledText(
+            parent, bg=C_PANEL, fg=C_FG, font=("Monospace", 10),
+            relief="flat", bd=0, wrap=tk.WORD, padx=30, pady=10)
+        st.pack(fill="both", expand=True, padx=40, pady=(0, 20))
+        st.insert("1.0", lic_text)
+        st.config(state="disabled")
+
+    def _build_page_donate(self, parent):
+        """Spenden-Seite – zentriert, großzügig."""
+        tk.Label(parent, text="💛  TUXPLAYER unterstützen",
+                 fg=C_GREEN, bg=C_BG, font=("Arial", 16, "bold")
+                 ).pack(pady=(30, 6))
+        tk.Frame(parent, bg=C_CYAN, height=2).pack(fill="x", padx=40, pady=(0, 20))
+
+        tk.Label(parent,
+                 text="TUXPLAYER Drum Studio ist kostenlos und Open Source.\n"
+                      "Wenn dir das Tool hilft, freue ich mich über eine kleine Unterstützung!\n"
+                      "Das motiviert mich, weitere Tools wie dieses zu entwickeln. ❤️",
+                 fg=C_FG, bg=C_BG, font=("Arial", 12), justify="center"
+                 ).pack(pady=(0, 30))
+
+        btn_frame = tk.Frame(parent, bg=C_BG)
+        btn_frame.pack()
+
+        tk.Button(btn_frame,
+                  text="  ☕   Buy Me a Coffee",
+                  bg="#FFDD00", fg="#000000",
+                  font=("Arial", 14, "bold"),
+                  relief="flat", cursor="hand2",
+                  padx=40, pady=14,
+                  command=lambda: webbrowser.open(
+                      "https://buymeacoffee.com/schaefer.heiko")
+                  ).pack(pady=(0, 12), ipadx=20)
+
+        tk.Button(btn_frame,
+                  text="  💳   PayPal · paypal.me/tuxplayer",
+                  bg="#009CDE", fg="#ffffff",
+                  font=("Arial", 14, "bold"),
+                  relief="flat", cursor="hand2",
+                  padx=40, pady=14,
+                  command=lambda: webbrowser.open(
+                      "https://paypal.me/tuxplayer")
+                  ).pack(pady=(0, 30), ipadx=20)
+
+        tk.Frame(parent, bg="#333333", height=1).pack(fill="x", padx=100, pady=(0, 16))
+        tk.Label(parent,
+                 text="Heiko Schäfer (TUXPLAYER)  ·  tuxhs.de  ·  github.com/Tuxplayers\n"
+                      "Musiker seit 1973  ·  Linux-Enthusiast  ·  Open-Source-Verfechter",
+                 fg=C_FG_DARK, bg=C_BG, font=("Arial", 10), justify="center"
+                 ).pack()
 
     # ══════════════════════════════════════════════════════════════════════════
     # MITTE – Sektions-Editor + Beat-Visualizer
@@ -417,11 +634,16 @@ class MainWindow:
                    ).grid(row=1, column=1, sticky="w", pady=3)
 
         _lbl("Beat-Pattern:", 2)
-        pat_cb = ttk.Combobox(grid, textvariable=self._pattern_var,
-                               values=list(BEAT_PATTERNS.keys()),
-                               state="readonly", font=("Arial", 9), width=18)
-        pat_cb.grid(row=2, column=1, sticky="w", pady=3)
-        pat_cb.bind("<<ComboboxSelected>>", lambda _: self._load_pattern())
+        pat_om = tk.OptionMenu(grid, self._pattern_var,
+                               *list(BEAT_PATTERNS.keys()),
+                               command=lambda _: self._load_pattern())
+        pat_om.config(bg=C_BTN, fg=C_FG, activebackground=C_GREEN_D,
+                      activeforeground="black", highlightthickness=0,
+                      relief="flat", font=("Arial", 9), width=16, cursor="hand2")
+        pat_om["menu"].config(bg=C_WIDGET, fg=C_FG,
+                              activebackground=C_GREEN_SL, activeforeground=C_FG,
+                              font=("Arial", 9))
+        pat_om.grid(row=2, column=1, sticky="w", pady=3)
 
         _lbl("Fill am Ende:", 3)
         fill_fr = tk.Frame(grid, bg=C_BG)
@@ -431,9 +653,14 @@ class MainWindow:
                        activebackground=C_BG, activeforeground=C_GREEN,
                        command=self._redraw_grid,
                        ).pack(side="left")
-        ttk.Combobox(fill_fr, textvariable=self._fill_var,
-                     values=FILL_TYPES, state="readonly",
-                     font=("Arial", 9), width=14).pack(side="left", padx=4)
+        fill_om = tk.OptionMenu(fill_fr, self._fill_var, *FILL_TYPES)
+        fill_om.config(bg=C_BTN, fg=C_FG, activebackground=C_GREEN_D,
+                       activeforeground="black", highlightthickness=0,
+                       relief="flat", font=("Arial", 9), width=12, cursor="hand2")
+        fill_om["menu"].config(bg=C_WIDGET, fg=C_FG,
+                               activebackground=C_GREEN_SL, activeforeground=C_FG,
+                               font=("Arial", 9))
+        fill_om.pack(side="left", padx=4)
 
         _lbl("Becken:", 4)
         becken_fr = tk.Frame(grid, bg=C_BG)
@@ -459,13 +686,13 @@ class MainWindow:
         hum_fr = tk.Frame(grid, bg=C_BG)
         hum_fr.grid(row=6, column=1, sticky="w", pady=3)
         tk.Scale(hum_fr, variable=self._humanize, from_=0, to=30,
-                 orient="horizontal", length=160,
+                 orient="horizontal", length=140,
                  bg=C_BG, troughcolor=C_BTN,
                  activebackground=C_CYAN, fg=C_FG_DIM,
                  highlightthickness=0, relief="flat",
                  showvalue=True, font=("Arial", 8),
                  ).pack(side="left")
-        tk.Label(hum_fr, text="Ticks", fg=C_FG_DARK, bg=C_BG,
+        tk.Label(hum_fr, text="= Timing-Zufall  (0 = exakt)", fg=C_FG_DARK, bg=C_BG,
                  font=("Arial", 8)).pack(side="left", padx=4)
 
         # ── Beat-Visualizer ───────────────────────────────────────────────────
@@ -575,12 +802,16 @@ class MainWindow:
                  ).pack(fill="x")
 
         tk.Button(frame, text="🎵 MIDI generieren & exportieren",
-                  command=self._export_midi,
+                  command=self._export_and_show,
                   bg=C_GREEN_DK, fg="white",
                   font=("Arial", 11, "bold"),
                   relief="flat", cursor="hand2", pady=10,
                   activebackground=C_GREEN, activeforeground="black",
-                  ).pack(fill="x", padx=12, pady=(0, 6))
+                  ).pack(fill="x", padx=12, pady=(0, 2))
+        self._export_status_lbl = tk.Label(frame, text="",
+                  fg=C_GREEN, bg=C_PANEL, font=("Arial", 8),
+                  wraplength=290, justify="left")
+        self._export_status_lbl.pack(anchor="w", padx=14, pady=(0, 4))
 
         # ── Playback ──────────────────────────────────────────────────────────
         tk.Frame(frame, bg=C_CYAN, height=1).pack(fill="x")
@@ -687,16 +918,20 @@ class MainWindow:
                   activebackground="#660000", activeforeground="white",
                   ).pack(side="right", padx=12, pady=4)
 
-        tk.Button(ftr, text="📖 Hilfe & Lizenz",
-                  command=self._show_info_window,
-                  bg=C_BTN, fg=C_CYAN, font=("Arial", 9, "bold"),
-                  relief="flat", cursor="hand2", pady=5,
-                  activebackground=C_GREEN_D, activeforeground="black",
-                  ).pack(side="right", padx=4, pady=4)
 
     # ══════════════════════════════════════════════════════════════════════════
     # MIDI-Generierung (echt, via mido)
     # ══════════════════════════════════════════════════════════════════════════
+
+    def _export_and_show(self):
+        """Export + Ergebnis direkt unter dem Button anzeigen."""
+        path = self._export_midi()
+        if path and hasattr(self, "_export_status_lbl"):
+            self._export_status_lbl.config(
+                text=f"✔  {os.path.basename(path)}", fg=C_GREEN)
+        elif hasattr(self, "_export_status_lbl"):
+            self._export_status_lbl.config(
+                text="✖  Export fehlgeschlagen", fg=C_WARN)
 
     def _export_midi(self) -> str | None:
         """
@@ -966,11 +1201,7 @@ class MainWindow:
         except FileNotFoundError:
             self._set_status("xdg-open nicht verfügbar.", "warn")
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Info / Hilfe / Lizenz-Fenster
-    # ══════════════════════════════════════════════════════════════════════════
-
-    def _show_info_window(self):
+    def _show_info_window(self):  # nicht mehr genutzt – Inhalt in linkem Panel
         """Öffnet ein modales Info-Fenster mit Bedienungsanleitung und Lizenz."""
         win = tk.Toplevel(self.root)
         win.title("📖 TUXPLAYER Drum Studio – Hilfe & Lizenz")
