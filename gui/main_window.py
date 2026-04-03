@@ -3,7 +3,7 @@
 # AUTOR        : Heiko Schäfer
 # ARTIST       : TUXPLAYER
 # ERSTELLT     : 2026-04-03
-# VERSION      : 1.1.0
+# VERSION      : 1.2.0
 # BESCHREIBUNG : Hauptfenster – 3-spaltiges Dark-UI im TUXPLAYER-Stil
 #                Echte MIDI-Generierung, FluidSynth-Playback, Hydrogen/Bitwig
 # STATUS       : development
@@ -20,6 +20,9 @@
 #              :                     Info-Fenster (Bedienungsanleitung + Lizenz)
 #              :                     8 Beat-Pattern-Presets (Bonham, Grohl, Purdie…)
 #              :                     Threading-Fix: GUI-Freeze bei pw-cli behoben
+#              : 2026-04-04 v1.2.0 – Doppelbase-Fix: Note 35 auf nächste 16tel
+#              :                     Spenden-Tab (Buy Me a Coffee + PayPal)
+#              :                     webbrowser-Integration für Donate-Links
 # ==============================================================================
 
 import os
@@ -27,6 +30,7 @@ import signal
 import subprocess
 import threading
 import traceback
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
 
@@ -168,7 +172,7 @@ class MainWindow:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("🥁 TUXPLAYER Drum Studio v1.1")
+        self.root.title("🥁 TUXPLAYER Drum Studio v1.2")
         self.root.configure(bg=C_BG)
         self.root.resizable(False, False)
         self.root.geometry("1200x800")
@@ -720,8 +724,9 @@ class MainWindow:
             if self._double_kick.get():
                 for si, active in enumerate(self._grid_data["kick"]):
                     if active:
-                        t = offset + si * STEP + 10
-                        events += [(t, 35, 95), (t + 90, 35, 0)]
+                        # Note 35 (linkes Pedal) auf nächste 16tel-Note
+                        t2 = offset + si * STEP + STEP
+                        events += [(t2, 35, 90), (t2 + 90, 35, 0)]
 
         # Events nach Zeit sortieren → Delta-Zeiten berechnen
         events.sort(key=lambda e: e[0])
@@ -887,9 +892,11 @@ class MainWindow:
         t_help    = tk.Frame(nb, bg=C_BG)
         t_license = tk.Frame(nb, bg=C_BG)
         t_credits = tk.Frame(nb, bg=C_BG)
+        t_donate  = tk.Frame(nb, bg=C_BG)
         nb.add(t_help,    text="📖 Bedienungsanleitung")
         nb.add(t_license, text="⚖ Lizenz")
         nb.add(t_credits, text="🎸 Credits")
+        nb.add(t_donate,  text="💛 Spenden")
 
         # ── Bedienungsanleitung ───────────────────────────────────────────────
         help_text = """\
@@ -1032,6 +1039,50 @@ TECHNOLOGIE-STACK
         st3.pack(fill="both", expand=True, padx=8, pady=8)
         st3.insert("1.0", cred_text)
         st3.config(state="disabled")
+
+        # ── Spenden ───────────────────────────────────────────────────────────
+        inner = tk.Frame(t_donate, bg=C_BG)
+        inner.pack(fill="both", expand=True, padx=24, pady=24)
+
+        tk.Label(inner, text="💛  Gefällt dir TUXPLAYER Drum Studio?",
+                 fg=C_GREEN, bg=C_BG, font=("Arial", 14, "bold")).pack(pady=(0, 6))
+        tk.Label(inner,
+                 text="Dieses Programm ist kostenlos und Open Source.\n"
+                      "Eine kleine Spende hilft dabei, weitere Tools zu entwickeln!",
+                 fg=C_FG_DIM, bg=C_BG,
+                 font=("Arial", 11), justify="center").pack(pady=(0, 20))
+
+        tk.Frame(inner, bg="#333333", height=1).pack(fill="x", pady=(0, 20))
+
+        # Buy Me a Coffee
+        tk.Button(inner,
+                  text="  ☕   Buy Me a Coffee",
+                  bg="#FFDD00", fg="#000000",
+                  font=("Arial", 13, "bold"),
+                  relief="flat", cursor="hand2",
+                  padx=20, pady=12,
+                  command=lambda: webbrowser.open(
+                      "https://buymeacoffee.com/schaefer.heiko")
+                  ).pack(fill="x", pady=(0, 10))
+
+        # PayPal
+        tk.Button(inner,
+                  text="  💳   PayPal · paypal.me/tuxplayer",
+                  bg="#009CDE", fg="#ffffff",
+                  font=("Arial", 13, "bold"),
+                  relief="flat", cursor="hand2",
+                  padx=20, pady=12,
+                  command=lambda: webbrowser.open(
+                      "https://paypal.me/tuxplayer")
+                  ).pack(fill="x", pady=(0, 10))
+
+        tk.Frame(inner, bg="#333333", height=1).pack(fill="x", pady=(20, 12))
+
+        tk.Label(inner,
+                 text="Danke! ❤️  — Heiko Schäfer (TUXPLAYER)\n"
+                      "https://tuxhs.de  ·  github.com/Tuxplayers",
+                 fg=C_FG_DARK, bg=C_BG,
+                 font=("Arial", 9), justify="center").pack()
 
         # Schließen-Button
         tk.Frame(win, bg=C_CYAN, height=1).pack(fill="x")
